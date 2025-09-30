@@ -1,5 +1,5 @@
 # 这个模块提供分析高度层信息、初始化地图、矢量风场绘制， 提取分析域（限制经纬度范围，温度K -> ℃以便作图）的基本函数供其它analyse_*.py模块调用
-# 这个模块还包含：针对postvar数据的温度+风场 位势高度风场 水汽水平散度场 的绘制工具
+# 这个模块还包含：针对postvar数据的温度+风场 位势高度风场 相对涡度/相对涡度平流 的绘制工具
 
 from utilities import *
 from IObasic import Model_lat, Model_lon
@@ -26,7 +26,7 @@ def levU(lv):
     return lvl, U_flag, U_flaglabel
 
 def map_initial(ax): # 初始化子图地图：经纬度范围、海岸线、边界、省界、网格线、网格标签
-    ax.set_extent([105, 126.3, 16.6, 40], crs=ccrs.PlateCarree())
+#    ax.set_extent([105, 126.3, 16.6, 40], crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.COASTLINE.with_scale('10m'), linewidth=0.2)
     ax.add_feature(cfeature.BORDERS, linestyle='-', linewidth=0.2)
     province_borders = cfeature.NaturalEarthFeature(
@@ -72,8 +72,10 @@ def preprocess(t,u,v,h,lv):
     h = h[lv]
     lon, lat = Model_lon, Model_lat
 
-    lon_min, lon_max = 105, 126.3
-    lat_min, lat_max = 16.6, 40
+    # lon_min, lon_max = 105, 126.3
+    # lat_min, lat_max = 16.6, 40
+    lon_min, lon_max = 93.64, 126.34
+    lat_min, lat_max = 16.6, 42.88
     lat, lon = Model_lat, Model_lon
     lat_inds = np.where((lat >= lat_min) & (lat <= lat_max))[0]
     lon_inds = np.where((lon >= lon_min) & (lon <= lon_max))[0]
@@ -91,8 +93,17 @@ def plot_tempwind(title,t,u,v,lon,lat,lvl,U_flag,U_flaglabel):
     fig = plt.figure(figsize=[5,5],dpi=300)
     ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
     map_initial(ax)
-    clevels = np.arange(np.floor(np.min(t)),np.ceil(np.max(t)),1)
-    contour = ax.contourf(lon,lat, t,transform=ccrs.PlateCarree(),cmap = 'bwr',levels = clevels) 
+    # 温度填色底图
+    if lvl == ' 500hpa':
+        clevels = np.arange(-10,3,1)
+    elif lvl ==' 850hpa':
+        clevels = np.arange(14,29,1)
+    else:
+        clevels = np.arange(np.floor(np.min(t)),np.ceil(np.max(t)),1)
+        
+    contour = ax.contourf(lon,lat, t,transform=ccrs.PlateCarree()
+                        ,cmap = 'seismic',levels = clevels,extend = 'both')
+
     windquiver(ax,lon,lat,u,v, U_flag, U_flaglabel)
     cb = fig.colorbar(contour)
     cb.ax.tick_params(labelsize=6)
@@ -105,10 +116,13 @@ def plot_ghwind(title,h,u,v,lon,lat,lvl,U_flag,U_flaglabel):
     ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
     map_initial(ax)
     clevels = np.arange(np.floor(np.min(h)),np.ceil(np.max(h)),1)
-    contour = ax.contourf(lon,lat, h,transform=ccrs.PlateCarree(),cmap = 'viridis',levels = clevels) 
+    contour = ax.contourf(lon,lat, h,transform=ccrs.PlateCarree(),cmap = 'jet',
+                          levels = clevels,extend='both') 
     # 绘制位势高度场等值线
-    cbar = ax.contour(lon, lat, h, colors='crimson', linewidths=0.7, levels=clevels, transform=ccrs.PlateCarree())
-    plt.clabel(cbar, levels=clevels, inline=True, fmt='%d', fontsize=4, colors='crimson')
+    cbar = ax.contour(lon, lat, h, colors='purple', linewidths=0.3, 
+                      levels=np.arange(np.floor(np.min(h)),np.ceil(np.max(h)),2), transform=ccrs.PlateCarree())
+    plt.clabel(cbar, levels=np.arange(np.floor(np.min(h)),np.ceil(np.max(h)),2), inline=True, fmt='%d', 
+               fontsize=4,colors='black')
     windquiver(ax,lon,lat,u,v, U_flag, U_flaglabel)
 
     cb = fig.colorbar(contour)
@@ -117,8 +131,43 @@ def plot_ghwind(title,h,u,v,lon,lat,lvl,U_flag,U_flaglabel):
     ax.set_title(lvl +" Geopotential Height-Wind Field\n"+title,loc = 'left',fontdict=font)
     plt.savefig(outpath + title + '_ghwind_' + lvl.strip() + '.png')
 
-def create_fig(title,figtype,t,u,v,gh,lv):
+def plot_vo(title,u,v,lon,lat,lvl,U_flag,vo_type = 'relative vo'):
+    fig = plt.figure(figsize=[5,5],dpi=300)
+    ax = fig.add_subplot(111, projection=ccrs.PlateCarree())
+    map_initial(ax)
+    _u = u * units("m/s")
+    _v = v * units("m/s")
+    dx, dy = mpcalc.lat_lon_grid_deltas(lon, lat)
+    vort = mpcalc.vorticity(_u, _v, dx=dx, dy=dy)
+    if vo_type == 'relative vo':
+        vo = vort
+        clevels = np.arange(-2e-3,2e-3+1e-4,1e-4)
+    elif vo_type == 'advection vo':
+        vo = mpcalc.advection(vort, _u, _v, dx=dx, dy=dy)
+        clevels = np.arange(-1.2e-6,1.2e-6+1e-7,1e-7)
+    contour = ax.contourf(lon,lat,vo,transform=ccrs.PlateCarree(),
+                          cmap = 'seismic',levels = clevels,extend = 'both') 
 
+    skip = 600  # 稀疏化  
+    windspeed = np.sqrt(u**2 + v**2)
+    mask = windspeed >= U_flag*0.6
+    
+    # 获取满足条件的稀疏化索引
+    rows, cols = np.where(mask)
+    rows = rows[::skip]
+    cols = cols[::skip]
+
+    ax.barbs(lon[cols], lat[rows], 
+             u[rows, cols], v[rows, cols],
+             length=3, pivot='middle', barbcolor='grey',
+             transform=ccrs.PlateCarree())
+    cb = fig.colorbar(contour)
+    cb.ax.tick_params(labelsize=6)
+    cb.set_label(vo_type,fontdict=font)
+    ax.set_title(lvl +'-'+vo_type+'\n'+title,loc = 'left',fontdict=font)
+    plt.savefig(outpath + title + vo_type + lvl.strip() + '.png')   
+
+def create_fig(title,figtype,t,u,v,gh,lv):
     lvl, U_flag, U_flaglabel = levU(lv)
     lon, lat, t, u, v, h = preprocess(t,u,v,gh,lv)
 
@@ -126,3 +175,6 @@ def create_fig(title,figtype,t,u,v,gh,lv):
         plot_tempwind(title,t,u,v,lon,lat,lvl,U_flag,U_flaglabel)
     elif figtype == 'ghwind': # 位势高度+风场
         plot_ghwind(title,h,u,v,lon,lat,lvl,U_flag,U_flaglabel)
+    elif figtype == 'vo':  # 相对涡度/相对涡度平流 + 风羽
+        plot_vo(title, u, v, lon, lat, lvl,U_flag,vo_type='relative vo')
+        plot_vo(title, u, v, lon, lat, lvl,U_flag,vo_type='advection vo')

@@ -1,7 +1,7 @@
 from utilities import *
 from IObasic import Model_lat, Model_lon
 
-def profilePLOT(figtype, target_value, tfield1, tfield2, ghfield3, ghfield4):
+def profilePLOTsi(figtype, target_value, tfield1, tfield2, ghfield3, ghfield4):
     
     if figtype == 'meridional':
        # 经向剖面图  
@@ -42,9 +42,9 @@ def profilePLOT(figtype, target_value, tfield1, tfield2, ghfield3, ghfield4):
          ax1.clabel(CS1, inline=True, fontsize=12)
          ax1.invert_yaxis()
          ax1.set_xlabel('Longtitude')
-         #ax1.set_ylabel('Log Pres')
+         ax1.set_ylabel('Log Pres')
          ax1.set_yticks(levels)
-         #ax1.set_yscale('log')                                                                           # 对数气压坐标
+         ax1.set_yscale('log')                                                                           # 对数气压坐标
          plt.colorbar(cf1, ax=ax1)         
     plt.savefig(outpath + figtype + '_' + str(target_value) + '.png', bbox_inches='tight')
 
